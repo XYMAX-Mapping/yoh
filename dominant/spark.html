@@ -176,62 +176,10 @@
             margin-right: 5px;
             border-radius: 50%;
         }
-        #info-panel {
-            position: absolute;
-            left: 20px;
-            top: 20px;
-            width: 280px;
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 12px;
-            z-index: 1000;
-        }
-        .info-header {
-            font-size: 14px;
-            font-weight: bold;
-            margin-bottom: 10px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid rgba(255,255,255,0.3);
-        }
-        .info-section {
-            margin-bottom: 15px;
-        }
-        .info-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin: 5px 0;
-            gap: 10px;
-        }
-        .info-type {
-            display: flex;
-            align-items: center;
-            min-width: 100px;
-        }
-        .info-numbers {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .info-count {
-            min-width: 60px;
-            text-align: right;
-        }
-        .info-percent {
-            min-width: 45px;
-            text-align: right;
-            color: rgba(255,255,255,0.7);
-        }
     </style>
 </head>
 <body>
     <div id="map"></div>
-    <div id="info-panel">
-        <div class="info-header">Visible Area Statistics</div>
-        <div id="info-content"></div>
-    </div>
     <div id="popup"></div>
     <div id="timeline">
         <div class="timeline-line"></div>
@@ -277,6 +225,8 @@
             const bbox = turf.bbox(polygon);
             const cellSize = Math.sqrt(turf.area(polygon) / count); // Approximate cell size for grid
 
+            console.log("bbox:", bbox);
+            console.log("cellSize:", cellSize);
             
             const grid = turf.pointGrid(bbox, cellSize, { units: 'meters' });
 
@@ -399,6 +349,7 @@
         function updatePoints(year) {
             selectedYear = year;
             
+            // Update timeline UI
             document.querySelectorAll('.year-circle').forEach(circle => {
                 circle.classList.toggle('active', circle.getAttribute('data-year') === year);
             });
@@ -406,16 +357,6 @@
             fetch('data/tokyo_mesh_2.geojson')
                 .then(response => response.json())
                 .then(data => {
-                    // Add unique IDs to features if they don't exist
-                    data.features.forEach((feature, index) => {
-                        feature.id = feature.properties.KEY_CODE || index;
-                    });
-
-                    // Update the source data with IDs
-                    if (map.getSource('mesh')) {
-                        map.getSource('mesh').setData(data);
-                    }
-
                     const points = {
                         type: 'FeatureCollection',
                         features: []
@@ -446,7 +387,6 @@
 
                     if (map.getSource('points')) {
                         map.getSource('points').setData(points);
-                        updateInfoPanel(); // Add this line
                     }
                 });
         }
@@ -605,102 +545,6 @@
             document.getElementById('popup').style.display = 'none';
         }
 
-        function getVisibleStats() {
-            // Get all features and filter them in JavaScript instead of using MapboxGL filter
-            const features = map.querySourceFeatures('mesh');
-            const visibleFeatures = features.filter(feature => 
-                map.getFeatureState({ source: 'mesh', id: feature.id }).visible
-            );
-            
-            return calculateAreaStats(visibleFeatures);
-        }
-
-        function calculateAreaStats(features) {
-            const years = ['1996', '2001', '2006', '2011', '2016', '2023'];
-            const stats = {
-                buildingCount: 0,
-                typeStats: {
-                    office: { count: 0, history: years.map(() => 0) },
-                    commercial: { count: 0, history: years.map(() => 0) },
-                    hotel: { count: 0, history: years.map(() => 0) },
-                    house: { count: 0, history: years.map(() => 0) },
-                    apartment: { count: 0, history: years.map(() => 0) },
-                    logistics: { count: 0, history: years.map(() => 0) }
-                }
-            };
-
-            features.forEach(feature => {
-                const props = feature.properties;
-                const yearPrefix = selectedYear === '2023' ? '2023' : selectedYear;
-                
-                // Current year counts
-                stats.buildingCount += props[`${yearPrefix}_building_count`] || 0;
-                Object.keys(stats.typeStats).forEach(type => {
-                    stats.typeStats[type].count += props[`${yearPrefix}_${type}_count`] || 0;
-                });
-
-                // Historical data
-                years.forEach((year, i) => {
-                    Object.keys(stats.typeStats).forEach(type => {
-                        stats.typeStats[type].history[i] += props[`${year}_${type}_count`] || 0;
-                    });
-                });
-            });
-
-            // Calculate percentages
-            const total = Object.values(stats.typeStats).reduce((sum, type) => sum + type.count, 0);
-            Object.values(stats.typeStats).forEach(type => {
-                type.percentage = total > 0 ? (type.count / total * 100).toFixed(1) : 0;
-            });
-
-            return stats;
-        }
-
-        function updateInfoPanel() {
-            const stats = getVisibleStats();
-            const content = document.getElementById('info-content');
-            
-            let html = `
-                <div class="info-section">
-                    <div>Total Buildings: ${stats.buildingCount.toLocaleString()}</div>
-                </div>
-                <div class="info-section">
-            `;
-
-            Object.entries(stats.typeStats)
-                .sort((a, b) => b[1].count - a[1].count)
-                .forEach(([type, data]) => {
-                    if (data.count > 0) {
-                        html += `
-                            <div class="info-row">
-                                <div class="info-type">
-                                    <span class="popup-color" style="background: ${getBuildingTypeColor(type)}"></span>
-                                    ${type.charAt(0).toUpperCase() + type.slice(1)}
-                                </div>
-                                <div class="info-numbers">
-                                    <canvas class="sparkline" data-type="${type}" width="60" height="20"></canvas>
-                                    <span class="info-count">${data.count.toLocaleString()}</span>
-                                    <span class="info-percent">${data.percentage}%</span>
-                                </div>
-                            </div>
-                        `;
-                    }
-                });
-
-            html += '</div>';
-            content.innerHTML = html;
-
-            // Draw sparklines
-            Object.entries(stats.typeStats).forEach(([type, data]) => {
-                if (data.count > 0) {
-                    const canvas = content.querySelector(`canvas[data-type="${type}"]`);
-                    if (canvas) {
-                        drawSparkline(canvas, data.history);
-                    }
-                }
-            });
-        }
-
         // Add click handlers for timeline
         document.querySelectorAll('.year-circle').forEach(circle => {
             circle.addEventListener('click', () => {
@@ -714,22 +558,6 @@
             map.addSource('mesh', {
                 type: 'geojson',
                 data: 'data/tokyo_mesh_2.geojson'
-            });
-
-            // Add highlight outline layer first
-            map.addLayer({
-                id: 'mesh-highlight',
-                type: 'line',
-                source: 'mesh',
-                paint: {
-                    'line-color': '#ffff00',
-                    'line-width': 2,
-                    'line-opacity': ['case',
-                        ['boolean', ['feature-state', 'visible'], false],
-                        1,
-                        0
-                    ]
-                }
             });
 
             map.addLayer({
@@ -784,31 +612,6 @@
             map.on('mouseleave', 'mesh-layer', () => {
                 map.getCanvas().style.cursor = '';
                 hidePopup();
-            });
-
-            // Add move handler to update visibility states
-            map.on('moveend', () => {
-                const bounds = map.getBounds();
-                const features = map.querySourceFeatures('mesh');
-                
-                features.forEach(feature => {
-                    const polygon = turf.polygon(feature.geometry.coordinates);
-                    const bbox = turf.bbox(polygon);
-                    
-                    // Check if polygon is fully contained in view
-                    const isVisible = 
-                        bbox[0] >= bounds.getWest() &&
-                        bbox[2] <= bounds.getEast() &&
-                        bbox[1] >= bounds.getSouth() &&
-                        bbox[3] <= bounds.getNorth();
-                    
-                    map.setFeatureState(
-                        { source: 'mesh', id: feature.id },
-                        { visible: isVisible }
-                    );
-                });
-
-                updateInfoPanel();
             });
         });
     </script>
