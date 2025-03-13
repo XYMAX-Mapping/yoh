@@ -232,7 +232,6 @@
         <div class="info-header">Visible Area Statistics</div>
         <div id="info-content"></div>
     </div>
-    <div id="popup"></div>
     <div id="timeline">
         <div class="timeline-line"></div>
         <div class="year-circle" data-year="1996">1996</div>
@@ -567,48 +566,20 @@
             ctx.fill();
         }
 
-        function showPopup(e) {
-            const popup = document.getElementById('popup');
-            const props = e.features[0].properties;
-            const stats = calculatePercentages(props, selectedYear);
-            
-            if (!stats) return;
-
-            let html = `<div style="margin-bottom: 5px">Building Types (${selectedYear})</div>`;
-            stats.sort((a, b) => b.percentage - a.percentage)
-                .forEach(({type, percentage}) => {
-                    html += `
-                        <div class="popup-row">
-                            <div class="popup-type">
-                                <span class="popup-color" style="background: ${getBuildingTypeColor(type)}"></span>
-                                ${type.charAt(0).toUpperCase() + type.slice(1)}
-                            </div>
-                            <canvas class="sparkline" data-type="${type}" width="60" height="20"></canvas>
-                            <div class="popup-percentage">${percentage}%</div>
-                        </div>`;
-                });
-
-            popup.innerHTML = html;
-            popup.style.display = 'block';
-            popup.style.left = `${e.point.x + 10}px`;
-            popup.style.top = `${e.point.y + 10}px`;
-
-            // Draw sparklines after adding to DOM
-            stats.forEach(({type}) => {
-                const canvas = popup.querySelector(`canvas[data-type="${type}"]`);
-                const history = getTypeHistory(props, type);
-                drawSparkline(canvas, history);
-            });
-        }
-
-        function hidePopup() {
-            document.getElementById('popup').style.display = 'none';
-        }
-
         function getVisibleStats() {
-            // Get all features and filter them in JavaScript instead of using MapboxGL filter
+            // Get all features and deduplicate by KEY_CODE
             const features = map.querySourceFeatures('mesh');
-            const visibleFeatures = features.filter(feature => 
+            const uniqueFeatures = Object.values(
+                features.reduce((acc, feature) => {
+                    const keyCode = feature.properties.KEY_CODE;
+                    if (!acc[keyCode]) {
+                        acc[keyCode] = feature;
+                    }
+                    return acc;
+                }, {})
+            );
+            
+            const visibleFeatures = uniqueFeatures.filter(feature => 
                 map.getFeatureState({ source: 'mesh', id: feature.id }).visible
             );
             
@@ -775,18 +746,7 @@
             // Then update points
             updatePoints('2023');
 
-            // Add these event listeners after adding layers
-            map.on('mousemove', 'mesh-layer', (e) => {
-                map.getCanvas().style.cursor = 'pointer';
-                showPopup(e);
-            });
-
-            map.on('mouseleave', 'mesh-layer', () => {
-                map.getCanvas().style.cursor = '';
-                hidePopup();
-            });
-
-            // Add move handler to update visibility states
+            // Keep the moveend event listener
             map.on('moveend', () => {
                 const bounds = map.getBounds();
                 const features = map.querySourceFeatures('mesh');
